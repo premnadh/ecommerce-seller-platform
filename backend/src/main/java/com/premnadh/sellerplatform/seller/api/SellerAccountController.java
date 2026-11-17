@@ -4,7 +4,9 @@ import com.premnadh.sellerplatform.seller.api.dto.CreateSellerRequest;
 import com.premnadh.sellerplatform.seller.api.dto.SellerResponse;
 import com.premnadh.sellerplatform.seller.application.SellerAccountService;
 import com.premnadh.sellerplatform.seller.domain.SellerAccount;
+
 import jakarta.validation.Valid;
+
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -28,7 +30,8 @@ public class SellerAccountController {
     ) {
         SellerAccount seller = sellerAccountService.registerSeller(
                 request.businessName(),
-                request.email()
+                request.email(),
+                request.password()
         );
 
         SellerResponse response = SellerResponse.from(seller);

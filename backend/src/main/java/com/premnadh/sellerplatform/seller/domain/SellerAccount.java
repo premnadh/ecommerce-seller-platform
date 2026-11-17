@@ -1,4 +1,3 @@
-
 package com.premnadh.sellerplatform.seller.domain;
 
 import jakarta.persistence.Column;
@@ -27,6 +26,9 @@ public class SellerAccount {
     @Column(name = "email", nullable = false, length = 255)
     private String email;
 
+    @Column(name = "password_hash", length = 100)
+    private String passwordHash;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 20)
     private SellerStatus status;
@@ -41,10 +43,15 @@ public class SellerAccount {
         // Required by JPA
     }
 
-    public SellerAccount(String businessName, String email) {
+    public SellerAccount(
+            String businessName,
+            String email,
+            String passwordHash
+    ) {
         this.id = UUID.randomUUID();
         this.businessName = businessName;
         this.email = email;
+        this.passwordHash = passwordHash;
         this.status = SellerStatus.ACTIVE;
     }
 
@@ -74,6 +81,10 @@ public class SellerAccount {
 
     public String getEmail() {
         return email;
+    }
+
+    public String getPasswordHash() {
+        return passwordHash;
     }
 
     public SellerStatus getStatus() {
