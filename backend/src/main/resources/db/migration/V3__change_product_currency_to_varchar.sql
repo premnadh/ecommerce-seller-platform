@@ -1,0 +1,3 @@
+ALTER TABLE products
+    ALTER COLUMN currency TYPE VARCHAR(3)
+    USING BTRIM(currency)::VARCHAR(3);
