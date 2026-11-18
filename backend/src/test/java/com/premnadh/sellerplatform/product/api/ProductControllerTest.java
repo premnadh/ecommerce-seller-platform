@@ -5,6 +5,7 @@ import com.premnadh.sellerplatform.product.application.ProductNotFoundException;
 import com.premnadh.sellerplatform.product.application.ProductService;
 import com.premnadh.sellerplatform.product.domain.Product;
 import com.premnadh.sellerplatform.product.domain.ProductStatus;
+import com.premnadh.sellerplatform.security.config.SecurityConfiguration;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -13,8 +14,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -22,11 +25,15 @@ import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 @WebMvcTest(ProductController.class)
-@Import(ProductExceptionHandler.class)
+@Import({
+        ProductExceptionHandler.class,
+        SecurityConfiguration.class
+})
 class ProductControllerTest {
 
     @Autowired
@@ -34,6 +41,9 @@ class ProductControllerTest {
 
     @MockitoBean
     private ProductService productService;
+
+    @MockitoBean
+    private JwtDecoder jwtDecoder;
 
     private UUID sellerId;
     private Product product;
@@ -52,6 +62,20 @@ class ProductControllerTest {
         );
     }
 
+    private RequestPostProcessor sellerJwt() {
+        return jwt().jwt(token ->
+                token.subject(sellerId.toString())
+        );
+    }
+
+    @Test
+    void shouldRejectUnauthenticatedProductRequests() throws Exception {
+        mockMvc.perform(get("/api/v1/products"))
+                .andExpect(status().isUnauthorized());
+
+        verifyNoInteractions(productService);
+    }
+
     @Test
     void shouldCreateProductAndReturn201() throws Exception {
         when(productService.createProduct(
@@ -63,7 +87,8 @@ class ProductControllerTest {
                 eq("GBP")
         )).thenReturn(product);
 
-        mockMvc.perform(post("/api/v1/sellers/{sellerId}/products", sellerId)
+        mockMvc.perform(post("/api/v1/products")
+                        .with(sellerJwt())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -75,7 +100,10 @@ class ProductControllerTest {
                                 }
                                 """))
                 .andExpect(status().isCreated())
-                .andExpect(header().exists("Location"))
+                .andExpect(header().string(
+                        "Location",
+                        "/api/v1/products/" + product.getId()
+                ))
                 .andExpect(jsonPath("$.id").value(product.getId().toString()))
                 .andExpect(jsonPath("$.sku").value("PHONE-001"))
                 .andExpect(jsonPath("$.name").value("Samsung Galaxy S25"))
@@ -93,7 +121,8 @@ class ProductControllerTest {
 
     @Test
     void shouldRejectInvalidProductRequest() throws Exception {
-        mockMvc.perform(post("/api/v1/sellers/{sellerId}/products", sellerId)
+        mockMvc.perform(post("/api/v1/products")
+                        .with(sellerJwt())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -110,11 +139,12 @@ class ProductControllerTest {
     }
 
     @Test
-    void shouldReturnProductsForSeller() throws Exception {
+    void shouldReturnProductsForAuthenticatedSeller() throws Exception {
         when(productService.getProductsBySeller(sellerId))
                 .thenReturn(List.of(product));
 
-        mockMvc.perform(get("/api/v1/sellers/{sellerId}/products", sellerId))
+        mockMvc.perform(get("/api/v1/products")
+                        .with(sellerJwt()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].id").value(product.getId().toString()))
                 .andExpect(jsonPath("$[0].sku").value("PHONE-001"))
@@ -124,15 +154,15 @@ class ProductControllerTest {
     }
 
     @Test
-    void shouldReturnSingleProduct() throws Exception {
+    void shouldUseAuthenticatedSellerIdentityWhenGettingProduct()
+            throws Exception {
         when(productService.getProductById(sellerId, product.getId()))
                 .thenReturn(product);
 
         mockMvc.perform(get(
-                        "/api/v1/sellers/{sellerId}/products/{productId}",
-                        sellerId,
+                        "/api/v1/products/{productId}",
                         product.getId()
-                ))
+                ).with(sellerJwt()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(product.getId().toString()))
                 .andExpect(jsonPath("$.price").value(799.99));
@@ -148,10 +178,9 @@ class ProductControllerTest {
                 ));
 
         mockMvc.perform(get(
-                        "/api/v1/sellers/{sellerId}/products/{productId}",
-                        sellerId,
+                        "/api/v1/products/{productId}",
                         product.getId()
-                ))
+                ).with(sellerJwt()))
                 .andExpect(status().isNotFound());
     }
 
@@ -174,10 +203,10 @@ class ProductControllerTest {
         )).thenReturn(product);
 
         mockMvc.perform(put(
-                        "/api/v1/sellers/{sellerId}/products/{productId}",
-                        sellerId,
+                        "/api/v1/products/{productId}",
                         product.getId()
                 )
+                        .with(sellerJwt())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -203,7 +232,8 @@ class ProductControllerTest {
                 anyString()
         )).thenThrow(new DuplicateProductSkuException("PHONE-001"));
 
-        mockMvc.perform(post("/api/v1/sellers/{sellerId}/products", sellerId)
+        mockMvc.perform(post("/api/v1/products")
+                        .with(sellerJwt())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -229,10 +259,10 @@ class ProductControllerTest {
         )).thenReturn(product);
 
         mockMvc.perform(patch(
-                        "/api/v1/sellers/{sellerId}/products/{productId}/status",
-                        sellerId,
+                        "/api/v1/products/{productId}/status",
                         product.getId()
                 )
+                        .with(sellerJwt())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -254,10 +284,10 @@ class ProductControllerTest {
         ));
 
         mockMvc.perform(patch(
-                        "/api/v1/sellers/{sellerId}/products/{productId}/status",
-                        sellerId,
+                        "/api/v1/products/{productId}/status",
                         product.getId()
                 )
+                        .with(sellerJwt())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
